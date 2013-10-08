@@ -27,6 +27,8 @@ use Doctrine\Common\Persistence\ObjectRepository;
 use Doctrine\Common\Collections\Selectable;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Updatable;
+use Doctrine\Common\Collections\Update;
 
 /**
  * An EntityRepository serves as a repository for entities with generic as well as
@@ -41,7 +43,7 @@ use Doctrine\Common\Collections\ArrayCollection;
  * @author  Jonathan Wage <jonwage@gmail.com>
  * @author  Roman Borschel <roman@code-factory.org>
  */
-class EntityRepository implements ObjectRepository, Selectable
+class EntityRepository implements ObjectRepository, Selectable, Updatable
 {
     /**
      * @var string
@@ -303,5 +305,15 @@ class EntityRepository implements ObjectRepository, Selectable
         $persister = $this->_em->getUnitOfWork()->getEntityPersister($this->_entityName);
 
         return new ArrayCollection($persister->loadCriteria($criteria));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function apply(Update $update)
+    {
+        $persister = $this->_em->getUnitOfWork()->getEntityPersister($this->_entityName);
+
+        $persister->applyUpdate($update);
     }
 }

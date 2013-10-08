@@ -19,6 +19,7 @@
 
 namespace Doctrine\ORM\Persisters;
 
+use Doctrine\Common\Collections\Operation\Operation;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\DBAL\Connection;
@@ -35,6 +36,11 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\Common\Util\ClassUtils;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\Expr\Comparison;
+use Doctrine\Common\Collections\Update;
+use Doctrine\Common\Collections\Operation\Add;
+use Doctrine\Common\Collections\Operation\Divide;
+use Doctrine\Common\Collections\Operation\Multiply;
+use Doctrine\Common\Collections\Operation\SetValue;
 
 /**
  * A BasicEntityPersister maps an entity to a single table in a relational database.
@@ -880,6 +886,29 @@ class BasicEntityPersister
     }
 
     /**
+     * Update entities according to the given Update operation.
+     *
+     * @param Update $update
+     */
+    public function applyUpdate(Update $update)
+    {
+        $tableAlias = $this->getSQLTableAlias($this->class->name);
+        $tableName  = $this->quoteStrategy->getTableName($this->class, $this->platform);
+
+        // Build SQL query
+        $query = 'UPDATE ' . $tableName . ' ' . $tableAlias . ' SET ';
+        foreach ($update->getOperations() as $field => $operation) {
+            $operationSQL = $this->getUpdateOperationSQL($field, $operation);
+
+            $query .= $operationSQL;
+        }
+
+        list($params, $types) = $this->expandUpdateParameters($update);
+
+        $this->conn->executeQuery($query, $params, $types);
+    }
+
+    /**
      * Expands Criteria Parameters by walking the expressions and grabbing all
      * parameters and types from it.
      *
@@ -910,6 +939,62 @@ class BasicEntityPersister
         foreach ($types as $type) {
             list($field, $value) = $type;
             $sqlTypes[] = $this->getType($field, $value);
+        }
+
+        return array($sqlValues, $sqlTypes);
+    }
+
+    /**
+     * @param string    $field
+     * @param Operation $operation
+     *
+     * @return string
+     */
+    private function getUpdateOperationSQL($field, Operation $operation)
+    {
+        $condition = $this->getSelectConditionStatementColumnSQL($field);
+
+        switch (true) {
+            case ($operation instanceof SetValue):
+                return $condition . ' = ?';
+
+            case ($operation instanceof Add):
+                return $condition . ' = ' . $condition . ' + ?';
+
+            case ($operation instanceof Multiply):
+                return $condition . ' = ' . $condition . ' * ?';
+
+            case ($operation instanceof Divide):
+                return $condition . ' = ' . $condition . ' / ?';
+
+            default:
+                throw new \RuntimeException("Unknown operation " . get_class($operation));
+        }
+    }
+
+    /**
+     * @param Update $update
+     *
+     * @return array(array(), array())
+     */
+    private function expandUpdateParameters(Update $update)
+    {
+        $sqlValues = array();
+        $sqlTypes = array();
+
+        foreach ($update->getOperations() as $field => $operation) {
+            switch (true) {
+                case ($operation instanceof SetValue):
+                case ($operation instanceof Add):
+                case ($operation instanceof Multiply):
+                case ($operation instanceof Divide):
+                    $sqlValues[] = $this->getValue($operation->getValue());
+                    $sqlTypes[] = $this->getType($field, $operation->getValue());
+                    break;
+
+                default:
+                    throw new \RuntimeException("Unknown operation " . get_class($operation));
+            }
         }
 
         return array($sqlValues, $sqlTypes);

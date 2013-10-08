@@ -25,6 +25,8 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Selectable;
 use Doctrine\Common\Collections\Criteria;
+use Doctrine\Common\Collections\Updatable;
+use Doctrine\Common\Collections\Update;
 
 use Closure;
 
@@ -42,9 +44,10 @@ use Closure;
  * @author    Roman Borschel <roman@code-factory.org>
  * @author    Giorgio Sironi <piccoloprincipeazzurro@gmail.com>
  * @author    Stefano Rodriguez <stefano.rodriguez@fubles.com>
+ * @author    Matthieu Napoli <matthieu@mnapoli.fr>
  * @todo      Design for inheritance to allow custom implementations?
  */
-final class PersistentCollection implements Collection, Selectable
+final class PersistentCollection implements Collection, Selectable, Updatable
 {
     /**
      * A snapshot of the collection at the moment it was fetched from the database.
@@ -878,5 +881,24 @@ final class PersistentCollection implements Collection, Selectable
         $persister = $this->em->getUnitOfWork()->getEntityPersister($this->association['targetEntity']);
 
         return new ArrayCollection($persister->loadCriteria($criteria));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function apply(Update $update)
+    {
+        if ($this->isDirty) {
+            $this->initialize();
+        }
+
+        if ($this->initialized) {
+            $this->coll->apply($update);
+            return;
+        }
+
+        $persister = $this->em->getUnitOfWork()->getEntityPersister($this->association['targetEntity']);
+
+        $persister->applyUpdate($update);
     }
 }
